@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test - NagrikSuraksha</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .message { background-color: #f8f9fa; padding: 10px; margin: 5px 0; border-left: 3px solid #007bff; }
+        button { padding: 10px 15px; margin: 5px; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        .emergency { background-color: #dc3545; }
+        .emergency:hover { background-color: #c82333; }
+        input, textarea { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ddd; border-radius: 3px; }
+        #messages { height: 300px; overflow-y: scroll; border: 1px solid #ddd; padding: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚨 NagrikSuraksha WebSocket Test</h1>
+        
+        <div id="connectionStatus" class="status disconnected">
+            ❌ Disconnected from server
+        </div>
+
+        <div class="test-section">
+            <h2>🔗 Connection Test</h2>
+            <button onclick="connectWebSocket()">Connect to Server</button>
+            <button onclick="disconnectWebSocket()">Disconnect</button>
+            <button onclick="getServerStatus()">Get Server Status</button>
+        </div>
+
+        <div class="test-section">
+            <h2>🆘 Emergency SOS Test</h2>
+            <input type="text" id="sosMessage" placeholder="Enter emergency message" value="Help! Emergency situation!">
+            <br>
+            <label>Latitude: <input type="number" id="sosLat" value="28.6139" step="0.000001"></label>
+            <label>Longitude: <input type="number" id="sosLng" value="77.2090" step="0.000001"></label>
+            <br>
+            <button class="emergency" onclick="sendSOS()">🚨 Send Emergency SOS</button>
+        </div>
+
+        <div class="test-section">
+            <h2>📍 Location Sharing Test</h2>
+            <input type="text" id="locationMessage" placeholder="Location update message" value="Sharing my current location">
+            <br>
+            <label>Latitude: <input type="number" id="locLat" value="28.6139" step="0.000001"></label>
+            <label>Longitude: <input type="number" id="locLng" value="77.2090" step="0.000001"></label>
+            <br>
+            <button onclick="sendLocation()">📍 Share Location</button>
+            <button onclick="getCurrentLocation()">🎯 Use Current Location</button>
+        </div>
+
+        <div class="test-section">
+            <h2>💬 General Messaging Test</h2>
+            <input type="text" id="generalMessage" placeholder="Enter message" value="Hello from WebSocket test!">
+            <button onclick="sendMessage()">📤 Send Message</button>
+        </div>
+
+        <div class="test-section">
+            <h2>📨 Received Messages</h2>
+            <div id="messages"></div>
+            <button onclick="clearMessages()">🗑️ Clear Messages</button>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let socket = null;
+        const messagesDiv = document.getElementById('messages');
+        const statusDiv = document.getElementById('connectionStatus');
+
+        function addMessage(type, data, timestamp = new Date().toLocaleTimeString()) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            messageDiv.innerHTML = `
+                <strong>[${timestamp}] ${type}:</strong><br>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function updateConnectionStatus(connected, clientId = null) {
+            if (connected) {
+                statusDiv.className = 'status connected';
+                statusDiv.innerHTML = `✅ Connected to server${clientId ? ` (ID: ${clientId})` : ''}`;
+            } else {
+                statusDiv.className = 'status disconnected';
+                statusDiv.innerHTML = '❌ Disconnected from server';
+            }
+        }
+
+        function connectWebSocket() {
+            if (socket && socket.connected) {
+                addMessage('INFO', 'Already connected to server');
+                return;
+            }
+
+            socket = io('http://localhost:3000');
+
+            socket.on('connect', () => {
+                addMessage('CONNECTION', 'Connected to server');
+                updateConnectionStatus(true, socket.id);
+            });
+
+            socket.on('connected', (data) => {
+                addMessage('WELCOME', data);
+                updateConnectionStatus(true, data.clientId);
+            });
+
+            socket.on('disconnect', (reason) => {
+                addMessage('CONNECTION', `Disconnected: ${reason}`);
+                updateConnectionStatus(false);
+            });
+
+            socket.on('sos_received', (data) => {
+                addMessage('🚨 SOS ALERT', data);
+            });
+
+            socket.on('sos_sent', (data) => {
+                addMessage('✅ SOS SENT', data);
+            });
+
+            socket.on('location_received', (data) => {
+                addMessage('📍 LOCATION', data);
+            });
+
+            socket.on('location_sent', (data) => {
+                addMessage('✅ LOCATION SENT', data);
+            });
+
+            socket.on('message_received', (data) => {
+                addMessage('💬 MESSAGE', data);
+            });
+
+            socket.on('status', (data) => {
+                addMessage('📊 STATUS', data);
+            });
+
+            socket.on('client_disconnected', (data) => {
+                addMessage('👋 CLIENT LEFT', data);
+            });
+
+            socket.on('error', (error) => {
+                addMessage('❌ ERROR', error);
+            });
+        }
+
+        function disconnectWebSocket() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+                updateConnectionStatus(false);
+                addMessage('INFO', 'Manually disconnected from server');
+            }
+        }
+
+        function sendSOS() {
+            if (!socket || !socket.connected) {
+                alert('Please connect to server first!');
+                return;
+            }
+
+            const sosData = {
+                message: document.getElementById('sosMessage').value,
+                location: {
+                    latitude: parseFloat(document.getElementById('sosLat').value),
+                    longitude: parseFloat(document.getElementById('sosLng').value)
+                },
+                urgency: 'critical'
+            };
+
+            socket.emit('send_sos', sosData);
+            addMessage('🚨 SOS SENDING', sosData);
+        }
+
+        function sendLocation() {
+            if (!socket || !socket.connected) {
+                alert('Please connect to server first!');
+                return;
+            }
+
+            const locationData = {
+                latitude: parseFloat(document.getElementById('locLat').value),
+                longitude: parseFloat(document.getElementById('locLng').value),
+                message: document.getElementById('locationMessage').value,
+                accuracy: 10
+            };
+
+            socket.emit('send_location', locationData);
+            addMessage('📍 LOCATION SENDING', locationData);
+        }
+
+        function sendMessage() {
+            if (!socket || !socket.connected) {
+                alert('Please connect to server first!');
+                return;
+            }
+
+            const messageData = {
+                message: document.getElementById('generalMessage').value
+            };
+
+            socket.emit('message', messageData);
+            addMessage('💬 MESSAGE SENDING', messageData);
+        }
+
+        function getServerStatus() {
+            if (!socket || !socket.connected) {
+                alert('Please connect to server first!');
+                return;
+            }
+
+            socket.emit('get_status');
+            addMessage('INFO', 'Requesting server status...');
+        }
+
+        function getCurrentLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        document.getElementById('locLat').value = position.coords.latitude;
+                        document.getElementById('locLng').value = position.coords.longitude;
+                        addMessage('🎯 GPS', `Got current location: ${position.coords.latitude}, ${position.coords.longitude}`);
+                    },
+                    (error) => {
+                        addMessage('❌ GPS ERROR', error.message);
+                    }
+                );
+            } else {
+                alert('Geolocation is not supported by this browser.');
+            }
+        }
+
+        function clearMessages() {
+            messagesDiv.innerHTML = '';
+        }
+
+        // Auto-connect on page load
+        window.onload = () => {
+            addMessage('INFO', 'WebSocket test page loaded. Click "Connect to Server" to start testing.');
+        };
+    </script>
+</body>
+</html>
